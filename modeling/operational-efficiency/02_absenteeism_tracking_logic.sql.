@@ -1,0 +1,46 @@
+/********************************************************************************
+ * PROJECT: AMEX Operational Intelligence Suite
+ * LAYER: Modeling / Operational Efficiency
+ * PURPOSE: 
+ * Analysis of Agent Absenteeism and Workforce Availability.
+ * This script categorizes schedule states into actionable absenteeism metrics,
+ * excluding non-operational categories like Familiarization Trips.
+ ********************************************************************************/
+
+SELECT DISTINCT
+    CASE 
+        WHEN ros.[roster_empdaterange_key] IS NULL THEN '-1' 
+        ELSE ros.[roster_empdaterange_key]
+    END AS roster_key,
+    CREATEDATE(GETYEAR(absen.[Date]), GETMONTH(absen.[Date]), GETDAY(absen.[Date])) AS date_key,
+    
+    absen.[Employee_ID],                        
+    absen.[Agent],
+    absen.Date,                        
+    absen.[Schedule_State],                        
+    absen.[Duration],
+
+    /* --- Absenteeism Classification Logic --- */
+    -- Minutes specifically attributed to unplanned absence (Sick/Late)
+    CASE
+        WHEN absen.[Schedule_State] IN ('SICK', 'SICK UNPAID', 'LATE') THEN absen.[Duration]
+        ELSE 0
+    END AS total_absenteeism_minutes,
+    
+    -- Total duration adjusted to exclude planned Leaves from the denominator
+    CASE
+        WHEN absen.[Schedule_State] IN ('LEAVE OF ABSENCE', 'PAID TIME OFF') THEN 0
+        WHEN absen.[Schedule_State] IN ('SICK', 'SICK UNPAID', 'LATE') THEN absen.[Duration]
+        ELSE absen.[Duration]
+    END AS total_duration_minutes  
+
+FROM absenteeism_storage AS absen
+LEFT JOIN operations_master_roster AS roster
+    ON roster.[Contractor ID] = absen.[Employee_ID]
+    
+LEFT JOIN ods_daterange_roster AS ros
+    ON TOSTRING(roster.[workday_id]) = ros.[employee_id]
+    AND CREATEDATE(GETYEAR(absen.[Date]), GETMONTH(absen.[Date]), GETDAY(absen.[Date]))
+    BETWEEN ros.[effective_from] AND CASE WHEN ros.[effective_to] IS NULL THEN CREATEDATE(2099,01,01) ELSE ros.[effective_to] END
+
+WHERE absen.[Schedule_State] NOT LIKE 'FAMILIARISATION TRIP';
