@@ -1,0 +1,63 @@
+/********************************************************************************
+ * PROJECT: AMEX Operational Intelligence Suite
+ * LAYER: Modeling / Customer Experience (CX)
+ * PURPOSE: 
+ * Transformation of raw RTF (Ready to Feed) surveys into actionable CX metrics.
+ * Calculates RTF Points (NPS-style) and OSAT (Overall Satisfaction) scores
+ * integrated with the Master Roster for agent-level performance attribution.
+ ********************************************************************************/
+
+SELECT DISTINCT
+    CASE 
+        WHEN ros.[roster_empdaterange_key] IS NULL THEN '-1' 
+        ELSE ros.[roster_empdaterange_key]
+    END AS roster_key,
+    CREATEDATE(GETYEAR(rtf.[Response Date (-04:00 GMT)]), 
+               GETMONTH(rtf.[Response Date (-04:00 GMT)]), 
+               GETDAY(rtf.[Response Date (-04:00 GMT)])) AS date_key,
+    
+    rtf.[Response ID] AS Response_ID,
+    CAST(rtf.[Response Date (-04:00 GMT)] AS DATETIME) AS Response_Date,
+    rtf.[Consolidated EID] AS Consolidated_EID,
+    TOSTRING(TOINT(rtf.[Consolidated Rep ID])) AS Consolidated_Rep_ID,
+    rtf.[Travel Counselor] AS Travel_Counselor,
+    TOINT(rtf.[RTF Numbers]) AS RTF_Numbers,
+    rtf.[RTF Groups] AS RTF_Groups,
+    rtf.[Overall Satisfaction] AS Overall_Satisfaction,
+    rtf.[Overall Satisfaction - Text] AS Overall_Satisfaction_Text,
+    rtf.[Effort Numeric] AS Effort_Numeric,
+    rtf.[Effort Text] AS Effort_Text,
+
+    /* --- NPS & RTF Segment Counters --- */
+    CASE WHEN rtf.[RTF Groups] = 'Detractor' THEN 1 ELSE 0 END AS rts_detractor,
+    CASE WHEN rtf.[RTF Groups] = 'Passive' THEN 1 ELSE 0 END AS rts_pasive,
+    CASE WHEN rtf.[RTF Groups] = 'Promoter' THEN 1 ELSE 0 END AS rts_promoter,
+    CASE WHEN rtf.[Travel Counselor] IS NOT NULL THEN 1 ELSE 0 END AS rtf_counter,
+    
+    /* --- Scoring Logic for Performance Dashboards --- */
+    -- RTF Calculation: Weighted points for NPS-style reporting
+    CASE 
+        WHEN rtf.[RTF Groups] = 'Promoter' THEN 10
+        WHEN rtf.[RTF Groups] = 'Detractor' THEN -10
+        ELSE 0 
+    END AS rtf_points,
+    
+    -- OSAT Calculation: Weights for Overall Satisfaction Index
+    CASE 
+        WHEN rtf.[Overall Satisfaction - Text] = 'Excellent' THEN 10
+        WHEN rtf.[Overall Satisfaction - Text] = 'Very Good' THEN 6
+        WHEN rtf.[Overall Satisfaction - Text] = 'Good' THEN 3
+        WHEN rtf.[Overall Satisfaction - Text] = 'Fair' THEN 1
+        WHEN rtf.[Overall Satisfaction - Text] = 'Poor' THEN 0
+        ELSE NULL
+    END AS osat_points
+
+FROM rtf_storage_sheets AS rtf
+LEFT JOIN operations_master_roster AS roster
+    ON roster.[Contractor ID] = rtf.[Consolidated EID]
+LEFT JOIN ods_daterange_roster AS ros
+    ON TOSTRING(roster.[workday_id]) = ros.[employee_id]
+    AND CREATEDATE(GETYEAR(rtf.[Response Date (-04:00 GMT)]), 
+                   GETMONTH(rtf.[Response Date (-04:00 GMT)]), 
+                   GETDAY(rtf.[Response Date (-04:00 GMT)]))
+    BETWEEN ros.[effective_from] AND CASE WHEN ros.[effective_to] IS NULL THEN CREATEDATE(2099,01,01) ELSE ros.[effective_to] END;
