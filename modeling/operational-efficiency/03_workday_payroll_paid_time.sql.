@@ -1,0 +1,43 @@
+/********************************************************************************
+ * PROJECT: AMEX Operational Intelligence Suite
+ * LAYER: Modeling / Operational Efficiency
+ * PURPOSE: 
+ * Integration of Workday Payroll data to track Paid Time.
+ * This model filters holiday tags to isolate operational paid hours, 
+ * providing the financial denominator for efficiency and cost-per-hour metrics.
+ ********************************************************************************/
+
+SELECT DISTINCT
+    CASE 
+        WHEN ros.[roster_empdaterange_key] IS NULL THEN '-1' 
+        ELSE ros.[roster_empdaterange_key]
+    END AS roster_key,
+    CREATEDATE(GETYEAR(wday.[reported date]), 
+               GETMONTH(wday.[reported date]), 
+               GETDAY(wday.[reported date])) AS date_key,
+
+    TOSTRING(TOINT(wday.[employee id])) AS workday_id,
+    wday.[reported date],
+    wday.[calculation tags],
+    wday.[status],
+    wday.[billing status],
+    wday.[calculated quantity] AS raw_quantity,
+
+    /* --- Paid Time Logic --- */
+    -- Excluding Holidays to focus on operational labor hours
+    CASE 
+        WHEN wday.[calculation tags] IN ('Holiday', 'Holiday Not Paid') THEN 0
+        ELSE wday.[calculated quantity]
+    END AS paid_time_hours
+
+FROM amex_workday AS wday
+
+LEFT JOIN operations_master_roster AS roster
+    ON TOSTRING(TOINT(roster.[workday_id])) = TOSTRING(TOINT(wday.[employee id]))
+    
+LEFT JOIN ods_daterange_roster AS ros
+    ON TOSTRING(TOINT(roster.[workday_id])) = ros.[employee_id]
+    AND CREATEDATE(GETYEAR(wday.[reported date]), 
+                   GETMONTH(wday.[reported date]), 
+                   GETDAY(wday.[reported date]))
+    BETWEEN ros.[effective_from] AND CASE WHEN ros.[effective_to] IS NULL THEN CREATEDATE(2099,01,01) ELSE ros.[effective_to] END;
