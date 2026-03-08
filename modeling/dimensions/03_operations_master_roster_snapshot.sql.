@@ -1,0 +1,47 @@
+/********************************************************************************
+ * PROJECT: AMEX Operational Intelligence Suite
+ * LAYER: Dimension / Snapshot
+ * PURPOSE: 
+ * Current Master Roster snapshot providing a unified identity across multiple 
+ * platforms (Workday, Sabre, ADS). Includes unique composite keys for 
+ * cross-system data validation and production queue mapping.
+ ********************************************************************************/
+
+SELECT 
+    /* --- Composite Unique Identifier --- */
+    TOSTRING(TOINT(ros2024.[WDID])) + ros2024.[Contractor ID] + 
+    TOSTRING(TOINT(ros2024.[MAX SINE])) + ros2024.[ADS ID] AS unique_id,
+
+    /* --- Agent Identity & Contact --- */
+    ros2024.[Last Name],
+    ros2024.[First Name],
+    ros2024.[Full Name],
+    ros2024.[TI Username],
+    ros2024.[Outlook Address],
+    ros2024.[Telus Email],
+    ros2024.[Date of Hire],
+
+    /* --- System Integration Keys --- */
+    TOSTRING(TOINT(ros2024.[WDID])) AS workday_id,
+    TOSTRING(TOINT(ros2024.[WDID])) AS workday_id_key,
+    TOSTRING(TOINT(ros2024.[WDID])) AS workday_id_key2,
+    TOSTRING(TOINT(ros2024.[WDID])) AS workday_id_last_call,
+    ros2024.[Contractor ID],
+    ros2024.[ADS ID],
+    TOSTRING(TOINT(ros2024.[MAX SINE])) AS max_sine_id,
+
+    /* --- Production & Tool Profiles (Sabre/EPR) --- */
+    ros2024.[SABRE Agent SINE],
+    ros2024.[EPR - Production],
+    ros2024.[LNIAT/TA - Production],
+    ros2024.[Personal Queue],
+    ros2024.[URGENT Queue],
+    ros2024.[EPD Name],
+
+    /* --- Operational Metadata --- */
+    ros2024.[Start/End],
+    ros2024.[wd],
+    ros2024.[CALCULATED DATE],
+    ros2024.[TIP]
+
+FROM master_roster_2024 AS ros2024;
