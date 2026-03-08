@@ -1,0 +1,42 @@
+/********************************************************************************
+ * PROJECT: AMEX Operational Intelligence Suite
+ * LAYER: Modeling / Operational Efficiency
+ * PURPOSE: 
+ * Analysis of Call Handling Time (CHT) and Agent Productivity.
+ * This model integrates Talk Time and After-Call Work (ACW) to measure 
+ * the total duration of customer interactions and agent capacity.
+ ********************************************************************************/
+
+SELECT DISTINCT
+    -- Creating Keys to connect to Dimension Tables
+    CASE 
+        WHEN ros.[roster_empdaterange_key] IS NULL THEN '-1' 
+        ELSE ros.[roster_empdaterange_key]
+    END AS roster_key,
+    CREATEDATE(GETYEAR(tra.[Date]), GETMONTH(tra.[Date]), GETDAY(tra.[Date])) AS date_key,
+    
+    /* --- Agent Identifiers --- */
+    tra.[Team Member],
+    TOSTRING(TOINT(tra.[WDID])) AS workday_id,
+    tra.[Contractor ID] AS contractor_id,
+    TOSTRING(TOINT(tra.[MAX Sine])) AS max_sine,
+    tra.[Date],
+
+    /* --- Performance Metrics --- */
+    tra.[Calls Answered],
+    TOFLOAT(tra.[CHT]) AS cht_avg,
+    tra.[Total Talk Time],
+    TOFLOAT(tra.[ACW]) AS acw_avg,
+    TOFLOAT(tra.[Total ACW]) AS total_acw_duration
+
+FROM cht_str AS tra
+LEFT JOIN operations_master_roster AS roster
+    ON roster.[workday_id] = TOSTRING(TOINT(tra.[WDID]))
+    
+LEFT JOIN ods_daterange_roster AS ros
+    ON TOSTRING(roster.[workday_id]) = ros.[employee_id]
+    AND CREATEDATE(GETYEAR(tra.[Date]), GETMONTH(tra.[Date]), GETDAY(tra.[Date]))
+    BETWEEN ros.[effective_from] AND CASE WHEN ros.[effective_to] IS NULL THEN CREATEDATE(2099,01,01) ELSE ros.[effective_to] END
+
+/* Filtering to ensure only validated agent records are processed */
+WHERE ros.[employee_id] IS NOT NULL;
