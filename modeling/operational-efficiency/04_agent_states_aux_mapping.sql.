@@ -1,0 +1,57 @@
+/********************************************************************************
+ * PROJECT: AMEX Operational Intelligence Suite
+ * LAYER: Modeling / Operational Efficiency
+ * PURPOSE: 
+ * Granular mapping of Agent States and Auxiliary Reasons.
+ * This script categorizes raw system states into "Productive" vs "Non-Productive"
+ * time, enabling Shrinkage analysis and Billable Hours calculation.
+ ********************************************************************************/
+
+SELECT 
+    CASE 
+        WHEN ros.[roster_empdaterange_key] IS NULL THEN '-1' 
+        ELSE ros.[roster_empdaterange_key]
+    END AS roster_key,
+    CREATEDATE(GETYEAR(btp.[date]), GETMONTH(btp.[date]), GETDAY(btp.[date])) AS date_key,
+    
+    btp.[date],
+    btp.[agent],
+    btp.[workday_id],
+    btp.[duration_minutes],
+    btp.[agent_state],
+    btp.[reason] AS reason_source,
+
+    /* --- Normalized Reason Logic --- */
+    CASE 
+        WHEN btp.[reason] IN ('Break & Lunch', 'Break & Lunch,Break & Lunch', 'Break & Lunch,Login', 'Break & Lunch,Meeting') THEN 'Break & Lunch'
+        WHEN btp.[reason] = 'Coaching & Feedback' THEN 'Coaching & Feedback'
+        WHEN btp.[reason] = 'Email & Chat' THEN 'Email & Chat'
+        WHEN btp.[reason] IN ('In The Moment Coaching', 'In The Moment Coaching,Login') THEN 'In The Moment Coaching'
+        WHEN btp.[reason] IN ('Login', 'Login,Login', 'Login,In The Moment Coaching') THEN 'Login'
+        WHEN btp.[reason] IN ('ManualSetACWPeriod', 'PendingACW', 'ManualSetACWPeriod,') THEN 'ACW'
+        WHEN btp.[reason] IN ('Meeting', 'Meeting,Meeting') THEN 'Meeting'
+        WHEN btp.[reason] IN ('System Issues', 'System Issues,System Issues') THEN 'System Issues'
+        WHEN ISNULL(btp.[reason]) AND btp.[agent_state] = 'LoggedOut' THEN 'Out'
+        WHEN btp.[agent_state] IN ('WaitForNextCall', 'CallInbound', 'CallConsult', 'CallOutbound', 'CallOnHold', 'CallInternal', 'CallDialing', 'CallRinging') AND ISNULL(btp.[reason]) THEN 'Productive Time'
+        ELSE ISNULL(btp.[reason], 'Other Non-Productive')
+    END AS normalized_reason,
+
+    /* --- Billable Hours Calculation (Productive Time) --- */
+    -- Converts only purely productive states to hours (Denominator: 60)
+    CASE
+        WHEN btp.[agent_state] IN ('WaitForNextCall', 'CallInbound', 'CallConsult', 'CallOutbound', 'CallOnHold', 'CallInternal', 'CallDialing', 'CallRinging') AND ISNULL(btp.[reason]) THEN btp.[duration_minutes]
+        WHEN btp.[agent_state] = 'AfterCallWork' AND btp.[reason] IN ('ManualSetACWPeriod', 'PendingACW', 'ManualSetACWPeriod,') THEN btp.[duration_minutes]
+        WHEN btp.[agent_state] = 'AfterCallWork' AND ISNULL(btp.[reason]) THEN btp.[duration_minutes]
+        ELSE 0
+    END / 60.0 AS billable_hours,
+
+    btp.[duration_minutes] AS total_duration_min
+
+FROM fact_aux_str AS btp
+LEFT JOIN operations_master_roster AS roster
+    ON TOSTRING(TOINT(roster.[workday_id])) = btp.[workday_id]
+    
+LEFT JOIN ods_daterange_roster AS ros
+    ON TOSTRING(TOINT(roster.[workday_id])) = ros.[employee_id]
+    AND CREATEDATE(GETYEAR(btp.[date]), GETMONTH(btp.[date]), GETDAY(btp.[date]))
+    BETWEEN ros.[effective_from] AND CASE WHEN ros.[effective_to] IS NULL THEN CREATEDATE(2099,01,01) ELSE ros.[effective_to] END;
