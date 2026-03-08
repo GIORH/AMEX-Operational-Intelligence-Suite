@@ -1,0 +1,31 @@
+/********************************************************************************
+ * PROJECT: AMEX Operational Intelligence Suite
+ * LAYER: Transformation / External Quality (RBST)
+ * PURPOSE: 
+ * Normalized view of all external audit questions (Legacy + 2024).
+ * This unpivoted structure allows for multi-year trend analysis of specific 
+ * compliance and soft skill failures at the question level.
+ ********************************************************************************/
+
+/* --- LEGACY QUESTIONS (2023 - JUL 2024) --- */
+SELECT 
+    rbstq.call_id AS call_id,
+    rbstq.question AS Question,
+    rbstq.[answer] AS Response,
+    CASE WHEN rbstq.[answer] = 'Yes' THEN 1 ELSE 0 END AS Yes_Response,
+    CASE WHEN rbstq.[answer] = 'No' THEN 1 ELSE 0 END AS No_Response
+FROM rbst_questions_storage AS rbstq
+WHERE answer IN ('Yes', 'No')
+
+UNION ALL
+
+/* --- NEW QUESTIONS (AUG 2024 - PRESENT) --- */
+/* Added defensive logic to ensure Yes/No_Response are always binary integers */
+SELECT
+    rbst2024.[call_id],
+    rbst2024.[Question],
+    rbst2024.[Response],
+    CASE WHEN rbst2024.[Response] = 'Yes' THEN 1 ELSE 0 END AS Yes_Response,
+    CASE WHEN rbst2024.[Response] = 'No' THEN 1 ELSE 0 END AS No_Response
+FROM str_rbst_2024_question AS rbst2024
+WHERE Response IN ('Yes', 'No');
